@@ -6,8 +6,8 @@ This repository contains Terraform infrastructure code to deploy a secure Azure 
 
 The solution deploys:
 - **Virtual Network** with dedicated subnets for APIM and Application Gateway
-- **API Management** instance in internal VNET mode
-- **Application Gateway** with WAF v2 for SSL termination and routing
+- **API Management** instance in internal VNET mode with CORS configuration
+- **Application Gateway** with WAF v2 for SSL termination and routing (Detection mode)
 - **Key Vault** for certificate management with RBAC
 - **Network Security Groups** with required rules for APIM and App Gateway
 - **Custom domain configuration** for API, Portal, and Management endpoints
@@ -18,6 +18,30 @@ The solution deploys:
 - Terraform >= 1.0 installed
 - A wildcard SSL certificate in PFX format
 - Azure subscription with sufficient permissions
+
+## Current Configuration
+
+This deployment includes several production-ready configurations based on real-world deployment experience:
+
+### 🔧 **WAF Configuration**
+- **Mode**: Detection (recommended for APIM integration)
+- **Disabled Rules**: Specific WAF rules that commonly interfere with APIM are disabled
+- **Monitoring**: Full logging and monitoring while allowing legitimate traffic
+
+### 🔗 **CORS Configuration**
+- **Global Policy**: Automatically configured for Developer Portal functionality
+- **Allowed Origins**: All custom domain endpoints (api, portal, management)
+- **Methods**: All standard HTTP methods (GET, POST, PUT, DELETE, etc.)
+
+### 🔐 **Certificate Management**
+- **Key Vault Integration**: Centralized certificate storage with RBAC
+- **Wildcard Support**: Single certificate for all endpoints
+- **Automatic Renewal Ready**: Infrastructure supports automated certificate updates
+
+### 🌐 **Network Security**
+- **Internal VNET**: APIM not directly accessible from internet
+- **NSG Rules**: Comprehensive security rules for both APIM and Application Gateway
+- **Health Probes**: Proper health check configuration for all endpoints
 
 ## Quick Start
 
@@ -100,6 +124,9 @@ variable "certificate_pfx_path" {
 Initialize and apply Terraform:
 
 ```bash
+# Navigate to the infrastructure directory
+cd infra
+
 # Initialize Terraform
 terraform init
 
@@ -110,37 +137,215 @@ terraform plan
 terraform apply
 ```
 
-The deployment typically takes 30-45 minutes due to APIM provisioning time.
+**⏱️ Expected Deployment Time**: 30-45 minutes due to APIM provisioning time.
+
+**📋 What Gets Deployed Automatically**:
+- ✅ Virtual Network with subnets
+- ✅ API Management with internal VNET configuration
+- ✅ Application Gateway with WAF in Detection mode
+- ✅ Key Vault with certificate upload
+- ✅ Network Security Groups with required rules
+- ✅ **Global CORS policy for Developer Portal functionality**
+- ✅ **WAF rules disabled for APIM compatibility**
+- ✅ SSL certificates configured for all endpoints
+- ✅ Health probes and backend configurations
 
 ## DNS Configuration
 
 After deployment, configure your DNS records to point to the Application Gateway public IP:
 
-1. Get the Application Gateway public IP from the output:
+### 1. Get the Public IP Address
+
+```bash
+# Get the Application Gateway public IP from Terraform output
+terraform output application_gateway_public_ip
+
+# Alternative: Get from Azure CLI
+az network public-ip show \
+  --name apim-yourapimname-appgw-pip \
+  --resource-group your-resource-group \
+  --query ipAddress \
+  --output tsv
+```
+
+### 2. Configure DNS Records
+
+Create **A records** (not CNAME) pointing to the Application Gateway IP:
+
+| Record Type | Name | Value |
+|-------------|------|-------|
+| A | `api.yourdomain.com` | Application Gateway IP |
+| A | `portal.yourdomain.com` | Application Gateway IP |
+| A | `management.yourdomain.com` | Application Gateway IP |
+
+**⚠️ Important**: Use A records, not CNAME records, for proper SSL certificate validation.
+
+### 3. Verify DNS Propagation
+
+```bash
+# Check DNS resolution
+nslookup api.yourdomain.com
+nslookup portal.yourdomain.com
+nslookup management.yourdomain.com
+
+# Or use dig
+dig api.yourdomain.com
+```
+
+**⏱️ DNS Propagation Time**: 5-60 minutes depending on your DNS provider.
+
+## Verification & Testing
+
+### 1. Verify Deployment Status
+
+```bash
+# Check Application Gateway backend health
+az network application-gateway show-backend-health \
+  --name apim-yourapimname-appgw \
+  --resource-group your-resource-group
+
+# Check APIM service status
+az apim show \
+  --name your-apim-name \
+  --resource-group your-resource-group \
+  --query provisioningState
+```
+
+### 2. Test SSL Certificates
+
+```bash
+# Test SSL certificate for each endpoint
+curl -I https://api.yourdomain.com
+curl -I https://portal.yourdomain.com
+curl -I https://management.yourdomain.com
+```
+
+**Expected Results**:
+- API endpoint: `HTTP/1.1 404` (expected - no APIs configured yet)
+- Portal endpoint: `HTTP/1.1 200` 
+- Management endpoint: `HTTP/1.1 200`
+
+### 3. Test Developer Portal
+
+**🔧 Critical Steps for Developer Portal**:
+
+1. **Clear Browser Cache**: Essential for CORS to work properly
    ```bash
-   terraform output application_gateway_public_ip
+   # Clear all browser data for your domain
+   # Or use incognito/private browsing mode
    ```
 
-2. Create DNS A records:
-   - `api.yourdomain.com` → Application Gateway IP
-   - `portal.yourdomain.com` → Application Gateway IP
-   - `management.yourdomain.com` → Application Gateway IP
+2. **Access Developer Portal**: 
+   - Navigate to `https://portal.yourdomain.com`
+   - You should see the APIM Developer Portal without CORS errors
+
+3. **Check Browser Console**: 
+   - Open F12 Developer Tools → Console
+   - Should see no CORS-related errors
+   - Should see no 503 errors from WAF
+
+### 4. Verify WAF Configuration
+
+```bash
+# Check WAF is in Detection mode (not blocking)
+az network application-gateway waf-config show \
+  --gateway-name apim-yourapimname-appgw \
+  --resource-group your-resource-group
+```
 
 ## Access Your Endpoints
 
-Once DNS is configured, you can access:
+Once DNS is configured and verified, you can access:
 
-- **API Gateway**: `https://api.yourdomain.com`
-- **Developer Portal**: `https://portal.yourdomain.com`
-- **Management API**: `https://management.yourdomain.com`
+- **🌐 API Gateway**: `https://api.yourdomain.com` (for API calls)
+- **👨‍💻 Developer Portal**: `https://portal.yourdomain.com` (for developers)
+- **⚙️ Management API**: `https://management.yourdomain.com` (for administration)
+
+**🎉 Success Indicators**:
+- ✅ All endpoints return valid SSL certificates
+- ✅ Developer Portal loads without CORS errors
+- ✅ No 503 errors from Application Gateway
+- ✅ Backend health checks show "Healthy" status
+
+## 📋 Complete Deployment Checklist
+
+### Pre-Deployment ✅
+- [ ] Azure CLI installed and authenticated (`az login`)
+- [ ] Terraform >= 1.0 installed (`terraform --version`)
+- [ ] Wildcard SSL certificate in PFX format available
+- [ ] Certificate password known
+- [ ] Unique names chosen for APIM and Key Vault
+
+### Deployment ✅
+- [ ] Repository cloned
+- [ ] Certificate placed in `certificate/` directory
+- [ ] `terraform.tfvars` configured with your values
+- [ ] Certificate path updated in `variables.tf` (if needed)
+- [ ] `terraform init` completed successfully
+- [ ] `terraform plan` reviewed
+- [ ] `terraform apply` completed (30-45 mins)
+
+### Post-Deployment ✅
+- [ ] Application Gateway public IP obtained
+- [ ] DNS A records created and propagated
+- [ ] SSL certificates verified for all endpoints
+- [ ] Backend health checks show "Healthy"
+- [ ] Developer Portal accessible without CORS errors
+- [ ] Browser cache cleared for testing
+
+### Troubleshooting (if needed) ✅
+- [ ] WAF logs checked if seeing 503 errors
+- [ ] DNS propagation verified
+- [ ] Certificate password and format verified
+- [ ] RBAC permissions confirmed in Azure portal
+
+## 🚨 Quick Troubleshooting
+
+**Developer Portal shows CORS errors?**
+```bash
+# 1. Clear browser cache completely
+# 2. Try incognito/private mode
+# 3. Check if CORS policy deployed:
+az apim policy list --resource-group your-rg --service-name your-apim
+```
+
+**Getting 503 errors?**
+```bash
+# Check Application Gateway WAF logs
+az monitor activity-log list --resource-group your-rg --max-events 50
+```
+
+**SSL certificate issues?**
+```bash
+# Verify certificate in Key Vault
+az keyvault certificate show --vault-name your-kv --name wildcard-yourdomain-com
+```
+
+**DNS not resolving?**
+```bash
+# Check DNS propagation
+nslookup api.yourdomain.com 8.8.8.8
+```
 
 ## Security Features
 
 - **Internal VNET**: APIM is deployed in internal mode, not directly accessible from internet
-- **WAF Protection**: Application Gateway provides Web Application Firewall protection
+- **WAF Protection**: Application Gateway provides Web Application Firewall protection in Detection mode
 - **SSL Termination**: HTTPS termination at Application Gateway with certificate from Key Vault
 - **RBAC**: Key Vault uses RBAC for modern access control
 - **NSG Rules**: Proper network security group rules for APIM and Application Gateway
+- **CORS Policy**: Global CORS configuration enables Developer Portal functionality
+
+### WAF Configuration
+
+The Application Gateway WAF is configured in **Detection mode** with specific rules disabled to ensure APIM functionality:
+
+- **Mode**: Detection (monitors but doesn't block)
+- **Disabled Rule Groups**:
+  - `REQUEST-920-PROTOCOL-ENFORCEMENT` (rules 920300, 920320)
+  - `REQUEST-942-APPLICATION-ATTACK-SQLI` (multiple SQL injection detection rules)
+
+This configuration allows legitimate APIM management traffic while still providing security monitoring.
 
 ## Customization
 
@@ -187,9 +392,41 @@ resource "azurerm_application_gateway" "appgw" {
    - APIM deployment can take 30-45 minutes
    - If it times out, check Azure portal for actual status
 
+4. **Developer Portal CORS Issues** ⚠️ **Common Issue**
+   - **Symptoms**: Portal shows errors when trying to access APIs, browser console shows CORS policy errors
+   - **Cause**: Missing CORS configuration for Developer Portal communication with Management API
+   - **Solution**: Global CORS policy is automatically configured in the Terraform deployment
+   - **Manual Fix**: If issues persist, clear browser cache and test in incognito mode
+
+5. **WAF Blocking APIM Traffic** ⚠️ **Common Issue**
+   - **Symptoms**: HTTP 503 errors on management endpoint, API calls failing
+   - **Cause**: WAF rules blocking legitimate APIM management requests
+   - **Solution**: WAF is configured in Detection mode with problematic rules disabled
+   - **Manual Fix**: Check Application Gateway WAF logs for blocked requests
+
+### Post-Deployment Verification
+
+After deployment, verify the following:
+
+1. **Clear Browser Cache**: Clear all browser cache and cookies for your custom domain
+2. **Test Developer Portal**: Open `https://portal.yourdomain.com` in incognito mode
+3. **Check Backend Health**: Verify all Application Gateway backend pools are healthy
+4. **Test API Endpoints**: Ensure APIs are accessible through `https://api.yourdomain.com`
+
 ### Debugging Commands
 
 ```bash
+# Check Application Gateway backend health
+az network application-gateway show-backend-health \
+  --name apim-yourapimname-appgw \
+  --resource-group your-resource-group
+
+# Check APIM service status
+az apim show \
+  --name your-apim-name \
+  --resource-group your-resource-group \
+  --query provisioningState
+
 # Check Terraform state
 terraform show
 
@@ -205,9 +442,38 @@ terraform destroy
 
 ## Cost Considerations
 
-- **API Management**: Developer SKU is cost-effective for testing, but consider Premium for production
-- **Application Gateway**: WAF v2 has hourly and capacity unit charges
-- **Key Vault**: Minimal cost for certificate storage
+- **API Management**: Developer SKU is cost-effective for testing (~$50/month), Premium for production (~$3000/month)
+- **Application Gateway**: WAF v2 has hourly charges (~$250/month) plus capacity unit charges
+- **Key Vault**: Minimal cost for certificate storage (~$3/month)
+- **Storage/Networking**: Additional costs for virtual network and storage resources
+
+💡 **Cost Optimization Tips**:
+- Use Developer SKU for non-production environments
+- Configure Application Gateway auto-scaling to optimize capacity costs
+- Monitor WAF logs to ensure Detection mode is appropriate before switching to Prevention
+
+## Known Limitations & Recommendations
+
+### 🚨 **Current Limitations**
+- **WAF in Detection Mode**: For optimal APIM compatibility, WAF is in Detection mode rather than Prevention
+- **Wildcard CORS**: CORS headers are configured with wildcards for maximum compatibility
+
+### 📋 **Production Recommendations**
+
+#### Security Hardening
+1. **WAF Monitoring**: Monitor WAF logs for 30 days in Detection mode
+2. **Gradual Rule Re-enablement**: Selectively re-enable WAF rules after confirming no false positives
+3. **CORS Refinement**: Restrict CORS origins to specific required domains after testing
+
+#### Operational Excellence
+1. **Certificate Automation**: Implement automated certificate renewal
+2. **Monitoring**: Deploy Application Insights for comprehensive monitoring
+3. **Backup Strategy**: Implement APIM configuration backup procedures
+
+#### Performance Optimization
+1. **Premium SKU**: Use Premium SKU for production workloads
+2. **Multi-Region**: Consider multi-region deployment for global applications
+3. **Caching**: Implement appropriate caching strategies
 
 ## Contributing
 

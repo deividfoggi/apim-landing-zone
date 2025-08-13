@@ -413,7 +413,7 @@ resource "azurerm_application_gateway" "appgw" {
     timeout             = 30
     unhealthy_threshold = 3
     match {
-      status_code = ["200"]
+      status_code = ["200", "404"]
     }
   }
   backend_http_settings {
@@ -496,9 +496,34 @@ resource "azurerm_application_gateway" "appgw" {
   }
   waf_configuration {
     enabled          = true
-    firewall_mode    = "Prevention"
+    firewall_mode    = "Detection"
     rule_set_type    = "OWASP"
     rule_set_version = "3.2"
+    
+    # Disable rules that commonly interfere with API Management
+    disabled_rule_group {
+      rule_group_name = "REQUEST-920-PROTOCOL-ENFORCEMENT"
+      rules = [
+        920300,  # Request Missing an Accept Header
+        920320   # Missing User Agent Header
+      ]
+    }
+    
+    disabled_rule_group {
+      rule_group_name = "REQUEST-942-APPLICATION-ATTACK-SQLI"
+      rules = [
+        942100,  # SQL Injection Attack Detected via libinjection
+        942110,  # SQL Injection Attack: Common Injection Testing Detected
+        942130,  # SQL Injection Attack: SQL Tautology Detected
+        942180,  # Detects basic SQL authentication bypass attempts 1/3
+        942200,  # Detects MySQL comment-/space-obfuscated injections and backtick termination
+        942260,  # Detects basic SQL authentication bypass attempts 2/3
+        942300,  # Detects MySQL and PostgreSQL stored procedure/function injections
+        942370,  # Detects classic SQL injection probings 2/2
+        942430,  # Restricted SQL Character Anomaly Detection (args): # of special characters exceeded (8)
+        942440   # SQL Comment Sequence Detected
+      ]
+    }
   }
 }
 
@@ -542,4 +567,99 @@ resource "azurerm_user_assigned_identity" "appgw" {
   name                = "appgw-identity"
   location            = azurerm_resource_group.rg.location
   resource_group_name = azurerm_resource_group.rg.name
+}
+
+# Configure CORS for API Management Developer Portal
+resource "azurerm_api_management_api" "cors_api" {
+  name                = "cors-api"
+  resource_group_name = azurerm_resource_group.rg.name
+  api_management_name = azurerm_api_management.apim.name
+  revision            = "1"
+  display_name        = "CORS API"
+  path                = ""
+  protocols           = ["https"]
+  
+  depends_on = [azurerm_api_management.apim]
+}
+
+resource "azurerm_api_management_api_policy" "cors_policy" {
+  api_name            = azurerm_api_management_api.cors_api.name
+  api_management_name = azurerm_api_management.apim.name
+  resource_group_name = azurerm_resource_group.rg.name
+
+  xml_content = <<XML
+<policies>
+  <inbound>
+    <cors allow-credentials="true">
+      <allowed-origins>
+        <origin>https://${var.portal_hostname}</origin>
+        <origin>https://${var.management_hostname}</origin>
+        <origin>https://${var.api_hostname}</origin>
+      </allowed-origins>
+      <allowed-methods preflight-result-max-age="300">
+        <method>GET</method>
+        <method>POST</method>
+        <method>PUT</method>
+        <method>DELETE</method>
+        <method>HEAD</method>
+        <method>OPTIONS</method>
+        <method>PATCH</method>
+      </allowed-methods>
+      <allowed-headers>
+        <header>*</header>
+      </allowed-headers>
+      <expose-headers>
+        <header>*</header>
+      </expose-headers>
+    </cors>
+    <base />
+  </inbound>
+  <backend>
+    <base />
+  </backend>
+  <outbound>
+    <base />
+  </outbound>
+  <on-error>
+    <base />
+  </on-error>
+</policies>
+XML
+}
+
+# Global CORS policy for the entire APIM instance
+resource "azurerm_api_management_policy" "global_cors" {
+  api_management_id = azurerm_api_management.apim.id
+
+  xml_content = <<XML
+<policies>
+  <inbound>
+    <cors allow-credentials="true">
+      <allowed-origins>
+        <origin>https://${var.portal_hostname}</origin>
+        <origin>https://${var.management_hostname}</origin>
+        <origin>https://${var.api_hostname}</origin>
+      </allowed-origins>
+      <allowed-methods preflight-result-max-age="300">
+        <method>GET</method>
+        <method>POST</method>
+        <method>PUT</method>
+        <method>DELETE</method>
+        <method>HEAD</method>
+        <method>OPTIONS</method>
+        <method>PATCH</method>
+      </allowed-methods>
+      <allowed-headers>
+        <header>*</header>
+      </allowed-headers>
+      <expose-headers>
+        <header>*</header>
+      </expose-headers>
+    </cors>
+  </inbound>
+  <backend />
+  <outbound />
+  <on-error />
+</policies>
+XML
 }

@@ -1,0 +1,6 @@
+{
+    "properties": {
+        "value": "<policies><inbound><cors allow-credentials=\"true\"><allowed-origins><origin>https://portal.thefoggi.com</origin><origin>https://management.thefoggi.com</origin><origin>https://api.thefoggi.com</origin></allowed-origins><allowed-methods preflight-result-max-age=\"300\"><method>GET</method><method>POST</method><method>PUT</method><method>DELETE</method><method>HEAD</method><method>OPTIONS</method><method>PATCH</method></allowed-methods><allowed-headers><header>*</header></allowed-headers><expose-headers><header>*</header></expose-headers></cors></inbound><backend /><outbound /><on-error /></policies>",
+        "format": "xml"
+    }
+}
