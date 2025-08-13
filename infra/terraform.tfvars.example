@@ -1,0 +1,23 @@
+# Azure API Management Landing Zone - Configuration Template
+# Copy this file to terraform.tfvars and update with your values
+
+# Azure region to deploy resources
+location            = "eastus2"
+
+# Resource group name
+resource_group_name = "apim-lz-rg"
+
+# API Management instance name (must be globally unique)
+apim_name           = "your-unique-apim-name"
+
+# Custom domain configuration (replace with your domain)
+custom_domain       = "yourdomain.com"
+api_hostname        = "api.yourdomain.com"
+portal_hostname     = "portal.yourdomain.com"
+management_hostname = "management.yourdomain.com"
+
+# Certificate configuration
+certificate_password = "your-certificate-password"
+
+# Key Vault name (must be globally unique)
+key_vault_name      = "your-unique-kv-name"
