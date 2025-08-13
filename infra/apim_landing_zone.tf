@@ -450,6 +450,7 @@ resource "azurerm_application_gateway" "appgw" {
     protocol                      = "Https"
     host_name                     = var.api_hostname
     ssl_certificate_name          = "wildcardCert"
+    require_sni                   = true
   }
   http_listener {
     name                           = "portalListener"
@@ -458,6 +459,7 @@ resource "azurerm_application_gateway" "appgw" {
     protocol                      = "Https"
     host_name                     = var.portal_hostname
     ssl_certificate_name          = "wildcardCert"
+    require_sni                   = true
   }
   http_listener {
     name                           = "mgmtListener"
@@ -466,6 +468,7 @@ resource "azurerm_application_gateway" "appgw" {
     protocol                      = "Https"
     host_name                     = var.management_hostname
     ssl_certificate_name          = "wildcardCert"
+    require_sni                   = true
   }
   request_routing_rule {
     name                       = "apiRule"
